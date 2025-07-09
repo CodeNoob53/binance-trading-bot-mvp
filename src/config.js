@@ -40,4 +40,4 @@ export const config = {
 
 // Валідація тільки для non-simulation режимівif (currentMode() !== 'simulation' && (!config.BINANCE_API_KEY || !config.BINANCE_API_SECRET)) {
   throw new Error(`❌ API credentials not set for ${currentMode()} mode!`);
-}
+
