@@ -14,7 +14,7 @@ export const scanForNewListings = async () => {
       .filter(s => s.status === 'TRADING' && s.quoteAsset === 'USDT')
       .map(s => s.symbol);
     
-    const knownSymbols = db.getKnownSymbols();
+    const knownSymbols = await db.getKnownSymbols();
     const newSymbols = currentSymbols.filter(s => !knownSymbols.includes(s));
     
     if (newSymbols.length > 0) {
@@ -24,7 +24,7 @@ export const scanForNewListings = async () => {
         await handleNewListing(symbol);
       }
       
-      db.saveKnownSymbols(currentSymbols);
+      await db.saveKnownSymbols(currentSymbols);
     }
     
   } catch (error) {
@@ -102,7 +102,7 @@ const executeTrade = async (symbol) => {
     slOrderId: slOrder.orderId
   };
   
-  const tradeId = db.saveTrade(trade);
+  const tradeId = await db.saveTrade(trade);
   trade.id = tradeId;
   
   activeTrades.set(tradeId, trade);
@@ -111,7 +111,7 @@ const executeTrade = async (symbol) => {
 };
 
 export const monitorActiveTrades = async () => {
-  const dbTrades = db.getActiveTrades();
+  const dbTrades = await db.getActiveTrades();
   
   for (const trade of dbTrades) {
     if (!activeTrades.has(trade.id)) {
@@ -145,7 +145,7 @@ const handleFilledOrder = async (trade, type, orderStatus) => {
   await binance.cancelOrder(trade.symbol, cancelOrderId);
   
   // Оновлення БД
-  db.updateTrade(trade.id, {
+  await db.updateTrade(trade.id, {
     status: `FILLED_${type}`,
     exitTime: Date.now(),
     sellPrice,
@@ -155,5 +155,4 @@ const handleFilledOrder = async (trade, type, orderStatus) => {
   activeTrades.delete(trade.id);
   
   const emoji = type === 'TP' ? '🎉' : '🛑';
-  logger.info(`${emoji} Trade closed: ${trade.symbol} ${type} | P&L: ${profitLoss}%`);
-};
+  logger.info(`${emoji} Trade closed: ${trade.symbol} ${type} | P&L: ${profitLoss}%`);};

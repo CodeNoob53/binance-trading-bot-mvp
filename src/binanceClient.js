@@ -109,7 +109,7 @@ export const scanForNewListings = async () => {
     const exchangeInfo = await getExchangeInfo();
     const currentSymbols = exchangeInfo.map(s => s.symbol);
     
-    const knownSymbols = db.getKnownSymbols();
+    const knownSymbols = await db.getKnownSymbols();
     const newSymbols = currentSymbols.filter(s => !knownSymbols.includes(s));
     
     if (newSymbols.length > 0) {
@@ -119,7 +119,7 @@ export const scanForNewListings = async () => {
         await handleNewListing(symbol);
       }
       
-      db.saveKnownSymbols(currentSymbols);
+      await db.saveKnownSymbols(currentSymbols);
     }
     
   } catch (error) {
@@ -177,14 +177,14 @@ const executeTrade = async (symbol) => {
     tpOrderId: tpOrder.orderId,
     slOrderId: slOrder.orderId
   };
-  const tradeId = db.saveTrade(trade);
+  const tradeId = await db.saveTrade(trade);
   trade.id = tradeId;
   activeTrades.set(tradeId, trade);
   logger.info(`🎯 TP: ${tpPrice} | 🛡️ SL: ${slPrice}`);
 };
 
 export const monitorActiveTrades = async () => {
-  const dbTrades = db.getActiveTrades();
+  const dbTrades = await db.getActiveTrades();
   for (const trade of dbTrades) {
     if (!activeTrades.has(trade.id)) {
       activeTrades.set(trade.id, trade);
@@ -210,7 +210,7 @@ const handleFilledOrder = async (trade, type, orderStatus) => {
   const profitLoss = ((sellPrice - trade.buyPrice) / trade.buyPrice * 100).toFixed(2);
   const cancelOrderId = type === 'TP' ? trade.slOrderId : trade.tpOrderId;
   await client.cancelOrder(trade.symbol, cancelOrderId);
-  db.updateTrade(trade.id, {
+  await db.updateTrade(trade.id, {
     status: `FILLED_${type}`,
     exitTime: Date.now(),
     sellPrice,
@@ -224,5 +224,4 @@ const handleFilledOrder = async (trade, type, orderStatus) => {
 export default {
   initializeBinanceClient,
   getExchangeInfo,
-  getKlines
-};
+  getKlines};

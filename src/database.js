@@ -84,6 +84,12 @@ const initSchema = async () => {
     `);
 
     await runAsync(`
+      CREATE TABLE IF NOT EXISTS known_symbols (
+        symbol TEXT PRIMARY KEY
+      );
+    `);
+
+    await runAsync(`
       CREATE TABLE IF NOT EXISTS simulation_results (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         runId TEXT NOT NULL UNIQUE,
@@ -148,6 +154,121 @@ export const getKlines = async (symbol, interval, startTime, endTime) => {
   );
 };
 
+// --- Trading related helpers ---
+export const saveTrade = async (trade) => {
+  const {
+    symbol,
+    buyPrice,
+    buyQuantity,
+    buyOrderId,
+    tpOrderId,
+    slOrderId
+  } = trade;
+  const mode = currentMode();
+  const entryTime = Date.now();
+  const sql = `
+    INSERT INTO trades (symbol, mode, buyPrice, buyQuantity, buyOrderId, tpOrderId, slOrderId, entryTime)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `;
+  await runAsync(sql, [symbol, mode, buyPrice, buyQuantity, buyOrderId, tpOrderId, slOrderId, entryTime]);
+  const row = await getAsync('SELECT last_insert_rowid() as id');
+  return row.id;
+};
+
+export const updateTrade = async (id, fields) => {
+  const keys = Object.keys(fields);
+  const values = Object.values(fields);
+  if (keys.length === 0) return;
+  const setClause = keys.map(k => `${k} = ?`).join(', ');
+  const sql = `UPDATE trades SET ${setClause} WHERE id = ?`;
+  await runAsync(sql, [...values, id]);
+};
+
+export const getActiveTrades = async () => {
+  return await allAsync('SELECT * FROM trades WHERE status = "ACTIVE"');
+};
+
+// --- Known symbols helpers ---
+export const saveKnownSymbols = async (symbolList) => {
+  await runAsync('DELETE FROM known_symbols');
+  for (const symbol of symbolList) {
+    await runAsync('INSERT INTO known_symbols (symbol) VALUES (?)', [symbol]);
+  }
+};
+
+export const getKnownSymbols = async () => {
+  const rows = await allAsync('SELECT symbol FROM known_symbols');
+  return rows.map(r => r.symbol);
+};
+
+// --- Listing history helpers ---
+export const saveListingHistory = async (data) => {
+  const {
+    symbol,
+    listingTime,
+    initialPrice,
+    price1h,
+    price24h,
+    price48h,
+    maxPrice48h,
+    minPrice48h,
+    volume48h,
+    category
+  } = data;
+  const sql = `
+    INSERT OR REPLACE INTO listing_history (symbol, listingTime, initialPrice, price1h, price24h, price48h, maxPrice48h, minPrice48h, volume48h, category)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `;
+  await runAsync(sql, [symbol, listingTime, initialPrice, price1h, price24h, price48h, maxPrice48h, minPrice48h, volume48h, category]);
+};
+
+export const getListingHistory = async (startTime, endTime) => {
+  return await allAsync(
+    'SELECT * FROM listing_history WHERE listingTime BETWEEN ? AND ? ORDER BY listingTime ASC',
+    [startTime, endTime]
+  );
+};
+
+// --- Simulation results helpers ---
+export const saveSimulationResult = async (result) => {
+  const {
+    runId,
+    parameters,
+    totalTrades,
+    winningTrades,
+    losingTrades,
+    totalProfit,
+    maxDrawdown,
+    sharpeRatio,
+    winRate,
+    avgProfit,
+    avgLoss,
+    bestTrade,
+    worstTrade
+  } = result;
+  const sql = `
+    INSERT INTO simulation_results (runId, timestamp, parameters, totalTrades, winningTrades, losingTrades, totalProfit, maxDrawdown, sharpeRatio, winRate, avgProfit, avgLoss, bestTrade, worstTrade)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `;
+  const params = [
+    runId,
+    Date.now(),
+    JSON.stringify(parameters || {}),
+    totalTrades,
+    winningTrades,
+    losingTrades,
+    totalProfit,
+    maxDrawdown,
+    sharpeRatio,
+    winRate,
+    avgProfit,
+    avgLoss,
+    bestTrade ? JSON.stringify(bestTrade) : null,
+    worstTrade ? JSON.stringify(worstTrade) : null
+  ];
+  await runAsync(sql, params);
+};
+
 // Ініціалізація схеми при запуску
 initSchema().catch(err => {
   logger.error('Failed to initialize database schema:', err);
@@ -161,5 +282,4 @@ export {
   allAsync as all,
   initSchema
 };
-
 export default db;
