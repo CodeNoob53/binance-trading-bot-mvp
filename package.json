@@ -1,0 +1,37 @@
+{
+  "name": "binance-trading-bot-mvp",
+  "version": "1.0.0",
+  "description": "MVP Binance Trading Bot with simulation mode",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "cross-env BOT_MODE=production node src/index.js",
+    "start:testnet": "cross-env BOT_MODE=testnet node src/index.js",
+    "start:simulation": "cross-env BOT_MODE=simulation node src/index.js",
+    "dev": "node --watch src/index.js",
+    "download-historical:testnet": "cross-env BOT_MODE=testnet node scripts/download-historical.js",
+    "download-historical:production": "cross-env BOT_MODE=production node scripts/download-historical.js",
+    "simulate": "node scripts/run-simulation.js",
+    "analyze": "node src/analysis/performanceAnalyzer.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@binance/connector": "^3.6.1",
+    "axios": "^1.6.7",
+    "cross-env": "^7.0.3",
+    "csv-parser": "^3.0.0",
+    "dotenv": "^16.3.1",
+    "node-binance-api": "^0.13.1",
+    "sqlite3": "^5.1.7",
+    "winston": "^3.11.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3"
+  }
+}
