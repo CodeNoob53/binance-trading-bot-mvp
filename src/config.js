@@ -38,7 +38,6 @@ export const config = {
   LOG_FILE: process.env.LOG_FILE || 'bot.log'
 };
 
-// Валідація тільки для non-simulation режимів
-if (currentMode !== 'simulation' && (!config.BINANCE_API_KEY || !config.BINANCE_API_SECRET)) {
-  throw new Error(`❌ API credentials not set for ${currentMode} mode!`);
+// Валідація тільки для non-simulation режимівif (currentMode() !== 'simulation' && (!config.BINANCE_API_KEY || !config.BINANCE_API_SECRET)) {
+  throw new Error(`❌ API credentials not set for ${currentMode()} mode!`);
 }
