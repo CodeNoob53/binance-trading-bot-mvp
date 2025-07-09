@@ -1,5 +1,4 @@
 import { Spot } from '@binance/connector';
-import { config } from './config.js';
 import { isSimulation, currentMode } from './modes.js';
 import logger from './logger.js';
 
@@ -100,129 +99,52 @@ export const getKlines = async (symbol, interval, startTime, endTime, limit = 10
   return response.data;
 };
 
-// Активні угоди в пам'яті
-const activeTrades = new Map();
-const cooldowns = new Map();
-
-export const scanForNewListings = async () => {
-  try {
-    const exchangeInfo = await getExchangeInfo();
-    const currentSymbols = exchangeInfo.map(s => s.symbol);
-    
-    const knownSymbols = db.getKnownSymbols();
-    const newSymbols = currentSymbols.filter(s => !knownSymbols.includes(s));
-    
-    if (newSymbols.length > 0) {
-      logger.info(`🆕 New listings detected: ${newSymbols.join(', ')}`);
-      
-      for (const symbol of newSymbols) {
-        await handleNewListing(symbol);
-      }
-      
-      db.saveKnownSymbols(currentSymbols);
-    }
-    
-  } catch (error) {
-    logger.error('Scan error:', error.message);
-  }
+// Binance API helper methods
+export const checkLiquidity = async (symbol) => {
+  const client = await initializeBinanceClient();
+  return client.checkLiquidity(symbol);
 };
 
-const handleNewListing = async (symbol) => {
-  try {
-    if (cooldowns.has(symbol)) {
-      logger.info(`⏰ ${symbol} is on cooldown`);
-      return;
-    }
-    if (activeTrades.size >= config.MAX_OPEN_TRADES) {
-      logger.warn(`🚫 Max trades limit reached (${activeTrades.size}/${config.MAX_OPEN_TRADES})`);
-      return;
-    }
-    const balance = await getBalance();
-    if (balance < config.BUY_AMOUNT_USDT) {
-      logger.error(`💰 Insufficient balance: ${balance} USDT`);
-      return;
-    }
-    const liquidity = await client.checkLiquidity(symbol);
-    if (liquidity < config.MIN_LIQUIDITY_USDT) {
-      logger.warn(`📊 Low liquidity for ${symbol}: ${liquidity.toFixed(2)} USDT`);
-      return;
-    }
-    await executeTrade(symbol);
-    cooldowns.set(symbol, true);
-    setTimeout(() => cooldowns.delete(symbol), 60 * 60 * 1000); // 1 година
-  } catch (error) {
-    logger.error(`Failed to handle ${symbol}:`, error.message);
-  }
+export const getPrice = async (symbol) => {
+  const client = await initializeBinanceClient();
+  const data = await client.getPrice(symbol);
+  return parseFloat(data.price ?? data?.data?.price);
 };
 
-const executeTrade = async (symbol) => {
-  const price = await client.getPrice(symbol);
-  const quantity = (config.BUY_AMOUNT_USDT / price).toFixed(8);
-  const buyOrder = await client.marketBuy(symbol, quantity);
-  const buyPrice = parseFloat(buyOrder.fills[0].price);
-  const executedQty = parseFloat(buyOrder.executedQty);
-  logger.info(`✅ Bought ${symbol}: ${executedQty} @ ${buyPrice}`);
-  const feeAdjustment = 2 * config.BINANCE_FEE;
-  const tpPrice = (buyPrice * (1 + config.TAKE_PROFIT_PERCENT + feeAdjustment)).toFixed(8);
-  const slPrice = (buyPrice * (1 - config.STOP_LOSS_PERCENT - feeAdjustment)).toFixed(8);
-  const [tpOrder, slOrder] = await Promise.all([
-    client.placeLimitSell(symbol, executedQty, tpPrice),
-    client.placeStopLoss(symbol, executedQty, slPrice, slPrice)
-  ]);
-  const trade = {
-    symbol,
-    buyPrice,
-    buyQuantity: executedQty,
-    buyOrderId: buyOrder.orderId,
-    tpOrderId: tpOrder.orderId,
-    slOrderId: slOrder.orderId
-  };
-  const tradeId = db.saveTrade(trade);
-  trade.id = tradeId;
-  activeTrades.set(tradeId, trade);
-  logger.info(`🎯 TP: ${tpPrice} | 🛡️ SL: ${slPrice}`);
+export const marketBuy = async (symbol, quantity) => {
+  const client = await initializeBinanceClient();
+  return client.marketBuy(symbol, quantity);
 };
 
-export const monitorActiveTrades = async () => {
-  const dbTrades = db.getActiveTrades();
-  for (const trade of dbTrades) {
-    if (!activeTrades.has(trade.id)) {
-      activeTrades.set(trade.id, trade);
-    }
-    try {
-      const [tpStatus, slStatus] = await Promise.all([
-        client.getOrderStatus(trade.symbol, trade.tpOrderId),
-        client.getOrderStatus(trade.symbol, trade.slOrderId)
-      ]);
-      if (tpStatus?.status === 'FILLED') {
-        await handleFilledOrder(trade, 'TP', tpStatus);
-      } else if (slStatus?.status === 'FILLED') {
-        await handleFilledOrder(trade, 'SL', slStatus);
-      }
-    } catch (error) {
-      logger.error(`Monitor error for ${trade.symbol}:`, error.message);
-    }
-  }
+export const placeLimitSell = async (symbol, quantity, price) => {
+  const client = await initializeBinanceClient();
+  return client.placeLimitSell(symbol, quantity, price);
 };
 
-const handleFilledOrder = async (trade, type, orderStatus) => {
-  const sellPrice = parseFloat(orderStatus.price);
-  const profitLoss = ((sellPrice - trade.buyPrice) / trade.buyPrice * 100).toFixed(2);
-  const cancelOrderId = type === 'TP' ? trade.slOrderId : trade.tpOrderId;
-  await client.cancelOrder(trade.symbol, cancelOrderId);
-  db.updateTrade(trade.id, {
-    status: `FILLED_${type}`,
-    exitTime: Date.now(),
-    sellPrice,
-    profitLoss
-  });
-  activeTrades.delete(trade.id);
-  const emoji = type === 'TP' ? '🎉' : '🛑';
-  logger.info(`${emoji} Trade closed: ${trade.symbol} ${type} | P&L: ${profitLoss}%`);
+export const placeStopLoss = async (symbol, quantity, stopPrice, limitPrice) => {
+  const client = await initializeBinanceClient();
+  return client.placeStopLoss(symbol, quantity, stopPrice, limitPrice);
+};
+
+export const getOrderStatus = async (symbol, orderId) => {
+  const client = await initializeBinanceClient();
+  return client.getOrderStatus(symbol, orderId);
+};
+
+export const cancelOrder = async (symbol, orderId) => {
+  const client = await initializeBinanceClient();
+  return client.cancelOrder(symbol, orderId);
 };
 
 export default {
   initializeBinanceClient,
   getExchangeInfo,
-  getKlines
-};
+  getBalance,
+  getKlines,
+  checkLiquidity,
+  getPrice,
+  marketBuy,
+  placeLimitSell,
+  placeStopLoss,
+  getOrderStatus,
+  cancelOrder};
